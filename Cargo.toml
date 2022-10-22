@@ -1,0 +1,27 @@
+[package]
+name = "cps"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+description = "Assists in the creation of readable and maintainable macro_rules! macros"
+homepage = "https://github.com/Solid-Flux/CPS/"
+repository = "https://github.com/Solid-Flux/CPS/"
+readme = "README.md"
+keywords = ["macro", "macros", "utility"]
+categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
+include = [
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/src/**",
+    "/tests/**",
+]
+
+[dependencies]
+syn = { version = "1.0", features=["full"] }
+proc-macro2 = "1.0"
+quote = "1.0"
+litrs = "0.2"
+
+[lib]
+proc-macro = true
