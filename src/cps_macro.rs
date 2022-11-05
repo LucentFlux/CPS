@@ -77,7 +77,7 @@ fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
         let inter_case: CPSMacroRule = syn::parse2(quote!{
             (@_cps |:| $( ( $_cps_next:tt ) )|* |:| #( { #acc_result_patterns } )* { #pattern } | $($_cps_stack:tt)*) => {
                 #path_indirection #binding_macro_path ! { @_cps |:|
-                    ( #macro_name ) $(| ( $_cps_next:path ) )* |:|
+                    ( #macro_name ) $(| ( $_cps_next ) )* |:|
                     { #binding_macro_args } | #( { #acc_result_clones } )* { #pattern_output_clone } | $($_cps_stack)*
                 }
             }
