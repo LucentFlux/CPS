@@ -1,6 +1,13 @@
 use cps::cps;
 
 #[cps]
+macro_rules! example {
+    () => {
+        BaseCase
+    };
+}
+
+#[cps]
 macro_rules! macro1 {
     () => { BaseCase };
 
@@ -22,7 +29,6 @@ macro_rules! exported_macro1 {
         stringify!($x)
     };
 }
-
 
 #[test]
 fn stringify_order_single_call() {

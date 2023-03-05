@@ -1,4 +1,6 @@
-use crate::parse_macro_decl::{begins_with_cps_marker, CPSMacroRule, MacroMatch};
+use std::collections::HashMap;
+
+use crate::parse_macro_decl::{begins_with_cps_marker, CPSMacroRule, MacroMatch, MacroMatcher};
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 use syn::punctuated::Punctuated;
@@ -26,11 +28,18 @@ pub fn build_next_step(
     }
 }
 
-fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
+fn add_cps(
+    macro_name: &Ident,
+    arm: CPSMacroRule,
+) -> (
+    Vec<CPSMacroRule>,
+    HashMap<String, (MacroMatcher, Vec<MacroMatcher>)>,
+) {
     let pattern = arm.pattern.clone();
     let impl_tokens = arm.impl_tokens;
 
-    let mut output = Vec::new();
+    let mut output_cases = Vec::new();
+    let mut output_debug_cases = HashMap::new();
 
     // Functions can be evaluated in several contexts:
     // 1. Base Case - they are the last function to execute and all of their bindings have been evaluated
@@ -50,7 +59,7 @@ fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
         }
     })
     .expect("could not build cps base case");
-    output.push(base_case);
+    output_cases.push(base_case);
 
     // Above is a special case of this for reduced macro recursion depth
     let next_step = build_next_step(
@@ -64,7 +73,7 @@ fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
             #next_step
         }
     }).expect("could not build cps inner base case");
-    output.push(inner_base_case);
+    output_cases.push(inner_base_case);
 
     // Create a pattern for each intermediate step as earlier results may be used in later executions
     let mut acc_result_patterns = Vec::new();
@@ -74,6 +83,7 @@ fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
         let path_indirection = binding.macro_name_indirection.clone();
         let binding_macro_path = binding.macro_invocation.path.clone();
         let binding_macro_args = binding.macro_invocation.tokens.clone();
+        // Successful inner case
         let inter_case: CPSMacroRule = syn::parse2(quote!{
             (@_cps |:| $( ( $_cps_next:tt ) )|* |:| #( { #acc_result_patterns } )* { #pattern } | $($_cps_stack:tt)*) => {
                 #path_indirection #binding_macro_path ! { @_cps |:|
@@ -82,7 +92,24 @@ fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
                 }
             }
         }).expect("could not build cps inter case");
-        output.push(inter_case);
+        output_cases.push(inter_case);
+
+        // Unsuccessful pattern match on inner case
+        let mut valid_patterns = acc_result_patterns
+            .clone()
+            .into_iter()
+            .map(|m: MacroMatch| MacroMatcher {
+                matches: vec![m.clone()],
+            })
+            .collect::<Vec<_>>();
+        valid_patterns.push(pattern.clone());
+        let expected_pattern = valid_patterns.remove(0);
+        let invalid_match: MacroMatcher = syn::parse2(quote!{@_cps |:| $( ( $_cps_next:tt ) )|* |:| { $($unexpected:tt)* } #( { #valid_patterns } )* | $($_cps_stack:tt)*}).expect("could not build cps inter debug match");
+        output_debug_cases
+            .entry(invalid_match.to_token_stream().to_string())
+            .or_insert((invalid_match, vec![]))
+            .1
+            .push(expected_pattern);
 
         let result_pattern = result_patterns
             .pop()
@@ -99,9 +126,9 @@ fn add_cps(macro_name: &Ident, arm: CPSMacroRule) -> Vec<CPSMacroRule> {
         }
     })
     .expect("could not build cps entry case");
-    output.push(entry);
+    output_cases.push(entry);
 
-    return output;
+    return (output_cases, output_debug_cases);
 }
 
 pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
@@ -126,10 +153,57 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
 
     // Add cps to all rules
     let mut new_rules = Vec::new();
+    let mut error_rules = HashMap::new();
     for rule in rules {
-        let mut new_cps_rules = add_cps(&macro_name, rule);
+        let (mut new_cps_rules, new_error_rules) = add_cps(&macro_name, rule);
         new_rules.append(&mut new_cps_rules);
+
+        for (s, (error_match, mut expected_patterns)) in new_error_rules {
+            error_rules.entry(s).or_insert((error_match, vec![])).1.append(&mut expected_patterns);
+        }
     }
+
+    // Collate same errors into messages
+    let error_rules = error_rules.into_iter().map(|(_, (error_match, expected_patterns))| {
+        let err_msg = if let [expected_pattern] = &expected_patterns.as_slice() {
+            format!(
+                "while evaluating macro {}, expected something that matches `{}` but got `",
+                macro_name.to_string(),
+                expected_pattern.to_token_stream()
+            )
+        } else {
+            let parts = 
+            expected_patterns.iter().map(|expected_pattern| format!("`{}`", expected_pattern.to_token_stream())).fold("".to_owned(), |a, b| a + " or " + &b);
+            format!(
+                "while evaluating macro {}, expected something that matches one of {} but got `",
+                macro_name.to_string(),
+                parts
+            )
+        };
+
+        syn::parse2::<CPSMacroRule>(quote!{
+            (#error_match) => {
+                std::compile_error!(std::concat!(#err_msg, std::stringify!($($unexpected)*) ,"` instead"));
+            }
+        }).expect("could not build cps inter debug case")
+    }).collect::<Vec<_>>();
+
+    // Add some fallback CPS rules that can help with debugging
+    let fallback_rules = quote! {
+        // Base case but wrong arguments
+        (@_cps |:|  |:|  |) => {
+            std::compile_error!("base case has no result - this is a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues");
+        };
+        (@_cps |:|  |:|  $($stack:tt)* ) => {
+            std::compile_error!(concat!("base case has invalid stack: `", stringify!($($stack)*), "` - this is a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues"));
+        };
+        (@_cps |:| $(($call_stack:tt))|* |:|  $($data_stack:tt)* ) => {
+            std::compile_error!(concat!("cps macro evaluation resulted in an invalid state, with call stack `", stringify!($($call_stack)*), "` and data stack `", stringify!($($data_stack)*), "` - this is probably a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues"));
+        };
+        (@_cps $($everything:tt)*) => {
+            std::compile_error!(concat!("cps macro evaluation resulted in an invalid state: `", stringify!($($everything)*), "` - this is a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues"));
+        };
+    };
 
     // Rebuild macro
     let attrs = m.attrs;
@@ -138,201 +212,11 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
     let rebuilt = quote! {
         #(#attrs)*
         #path ! #macro_name {
-            #(#new_rules);*
+            #(#new_rules ;)*
+            #(#error_rules ;)*
+            #fallback_rules
         } #semi
     };
 
     rebuilt
 }
-
-/*
-#[cps]
-macro_rules! example {
-    (...) => {
-        ...
-    }
-}
-
-should become
-
-macro_rules! example {
-    (@_cps |:|  |:| { ... }) => {
-        ...
-    };
-
-    (@_cps
-    |:|
-        $_cps_cont:ident !
-        $(
-            ; $_cps_cont_rest:ident !
-        )*
-    |:| { ... } $({$($_cps_stack:tt)*})*) => {
-        $_cps_cont ! {@_cps
-            |:|
-                $(
-                    $_cps_cont_rest:ident !
-                );*
-            |:| { ... } $({$($_cps_stack)*})*
-        }
-    };
-
-    (...) => {
-        example! (@_cps |:|  |:| { ... })
-    };
-}
-
-
-
-#[cps]
-macro_rules! example {
-    (a, ...) => {
-        ...
-        example!(b, ...)
-        ...
-    };
-
-    (b, ...) => {
-        ...
-    }
-}
-
-should become
-
-macro_rules! example {
-    (@_cps |:|  |:| { a, ... }) => {
-        ...
-    };
-
-    (@_cps |:|  |:| { b, ... }) => {
-        ...
-    };
-
-    (@_cps
-    |:|
-        $_cps_cont:ident !
-        $(
-            ; $_cps_cont_rest:ident !
-        )*
-    |:| { a, ... } $({$($_cps_stack:tt)*})*) => {
-        $_cps_cont ! {@_cps
-            |:|
-                $(
-                    $_cps_cont_rest:ident !
-                );*
-            |:| { ... } $({$($_cps_stack)*})*
-        }
-    };
-
-    (@_cps
-    |:|
-        $_cps_cont:ident !
-        $(
-            ; $_cps_cont_rest:ident !
-        )*
-    |:| { b, ... } $({$($_cps_stack:tt)*})*) => {
-        $_cps_cont ! {@_cps
-            |:|
-                $(
-                    $_cps_cont_rest:ident !
-                );*
-            |:| { ... } $({$($_cps_stack)*})*
-        }
-    };
-
-    (...) => {
-        example! (@_cps |:|  |:| { ... })
-    };
-}
-
-
-
-
-#[cps]
-macro_rules! example {
-    (a, ...) =>
-    let $b1 = example!(b, ...) in
-    let $b2 = example!(b, ..., {$b1}, ...) in
-    {
-        ...
-        $b1
-        ...
-        $b2
-        ...
-    };
-
-    (b, ...) => {
-        ...
-    }
-}
-
-should become
-
-macro_rules! example {
-    (@_cps |:|  |:| { $($b2:tt)* } { $($b1:tt)* } { a, ... }) => {
-        ...
-        $($b1)*
-        ...
-        $($b2)*
-        ...
-    };
-
-    (@_cps |:|  |:| { b, ... }) => {
-        ...
-    };
-
-    (@_cps
-    |:|
-        $(
-            $_cps_conts:ident !
-        );*
-    |:|
-        { a, ... } | $($_cps_stack:tt)*
-    ) => {
-        example! {@_cps
-            |:|
-            example! ; example! ; $( $_cps_conts ! );*
-            |:|
-            { b, ... } | push_1 { b, ..., _, ... } | $($_cps_stack)*
-        }
-    };
-
-    (@_cps
-    |:|
-        $_cps_cont:ident !
-        $(
-            ; $_cps_cont_rest:ident !
-        )*
-    |:|
-        { $($b1:tt)* } push_1 { b, ..., _, ... } | $($_cps_stack:tt)*
-    ) => {
-        $_cps_cont {@_cps
-            |:|
-                $(
-                    $_cps_cont_rest:ident !
-                );*
-            |:|
-            { b, ..., { $($b1)* }, ... } | { $($b1)* } $($_cps_stack)*
-        }
-    };
-
-    (@_cps
-    |:|
-        $_cps_cont:ident !
-        $(
-            ; $_cps_cont_rest:ident !
-        )*
-    |:| { b, ... } | $($_cps_stack:tt)*) => {
-        $_cps_cont ! {@_cps
-            |:|
-                $(
-                    $_cps_cont_rest:ident !
-                );*
-            |:| { ... } $($_cps_stack)*
-        }
-    };
-
-    (...) => {
-        example! (@_cps |:|  |:| { ... })
-    };
-}
-*/

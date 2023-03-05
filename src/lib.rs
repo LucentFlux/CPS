@@ -18,8 +18,14 @@ macro_rules! recognize_tree {
     ($($other:tt)*) => { println!("I don't know; some kind of birch maybe?") };
 }
 
+macro_rules! name_a_larch {
+    () => {
+        recognize_tree!(expand_to_larch!())
+    };
+}
+
 fn main() {
-    recognize_tree!(expand_to_larch!()); // Prints "I don't know; some kind of birch maybe?"
+    name_a_larch!(); // Prints "I don't know; some kind of birch maybe?"
 }
 ```
 
@@ -40,8 +46,14 @@ macro_rules! call_with_larch {
     ($callback:ident) => { $callback!(larch) };
 }
 
+macro_rules! name_a_larch {
+    () => {
+        call_with_larch!(recognize_tree)
+    };
+}
+
 fn main() {
-    call_with_larch!(recognize_tree); // Correctly prints "#1, the Larch."
+    name_a_larch!(); // Correctly prints "#1, the Larch." but is pretty hard to read
 }
 ```
 
@@ -125,19 +137,16 @@ mod cps_macro;
 mod cps_proc_macro;
 mod parse_cps_input;
 mod parse_macro_decl;
+mod std_macros;
 
 use proc_macro::TokenStream;
-use quote::ToTokens;
-use syn::ext::IdentExt;
-use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::{parse_macro_input, Ident, ItemMacro, LitBool, Token};
+use syn::{parse_macro_input, ItemMacro};
 
 /// Manipulates a macro_rules! definition to add extended syntax to help in creating readable macros.
 ///
 /// # Usage
 ///
-/// CPS macros are a strict superset of Rust macro-rules. This means that any (*) regular rust macro can
+/// CPS macros are a strict superset of Rust macro-rules. This means that any (\*) regular rust macro can
 /// be prefaced by `#[cps]` and behave exactly the same.
 ///
 /// The added syntax is the new `let` bindings allowed before the body of macro rules. These let statements
@@ -167,14 +176,16 @@ use syn::{parse_macro_input, Ident, ItemMacro, LitBool, Token};
 /// macro_rules! macro2 {
 ///     (a_b) =>
 ///     let $x:tt = macro1!(a) in
+///     let $x2:tt = cps::stringify!($x) in
 ///     let $y:tt = macro1!(b) in
+///     let $y2:tt = cps::stringify!($y) in
 ///     {
-///         concat!($x, $y)
+///         concat!($x2, $y2)
 ///     };
 ///
 ///     (sequential) =>
 ///     let $x:tt = macro1!(a) in
-///     let $y:tt = macro2!($x) in
+///     let $y:tt = macro1!($x) in
 ///     {
 ///         stringify!($y)
 ///     };
@@ -229,116 +240,17 @@ pub fn cps(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(cps_macro::impl_cps(proc_macro2::TokenStream::from(attr), m))
 }
 
-macro_rules! impl_cps {
-    (
-        $(use $import:path;)*
-        fn $name:ident($param_ident:ident : $param_ty:path $(,)?) -> $ret_ty:path {
-            $( $impl_tt:tt )*
-        }
-    ) => {
-        mod $name {
-            $(use $import;)*
+macro_rules! export_std_cps {
+    ($name:ident) => {
 
-            pub struct Impl {}
-
-            impl crate::cps_proc_macro::CPSProcMacro for Impl {
-                type Input = $param_ty;
-                type Output = $ret_ty;
-
-                fn step($param_ident: $param_ty) -> $ret_ty {
-                    $( $impl_tt )*
-                }
-            }
-        }
-
-        #[doc = "Performs the same task as the builtin macro of the same name, but this can also be used as a let binding in a CPS macro"]
+        #[doc = "Performs the same task as the builtin macro of the same name, but this version can also be used as a let binding in a CPS macro"]
         #[proc_macro]
         pub fn $name(item: TokenStream) -> TokenStream {
-            let item = proc_macro2::TokenStream::from(item);
-            let res = perform_macro::<$name::Impl>(item);
-            TokenStream::from(res)
+            crate::std_macros::$name::$name(item)
         }
     };
 }
 
-use crate::cps_proc_macro::perform_macro;
-
-impl_cps!(
-    fn stringify(tokens: proc_macro2::TokenStream) -> proc_macro2::Literal {
-        proc_macro2::Literal::string(&tokens.to_string())
-    }
-);
-
-enum Literal {
-    Literal(proc_macro2::Literal),
-    True,
-    False,
-}
-
-impl Parse for Literal {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(Ident::peek_any) {
-            let ident: LitBool = input
-                .parse()
-                .map_err(|e| input.error(format!("{} when parsing token {}", e, input)))?;
-            return match ident.value {
-                true => Ok(Self::True),
-                false => Ok(Self::False),
-            };
-        }
-        Ok(Self::Literal(input.parse().map_err(|e| {
-            input.error(format!("{} when parsing token {}", e, input))
-        })?))
-    }
-}
-
-impl ToString for Literal {
-    fn to_string(&self) -> String {
-        match self {
-            Literal::Literal(l) => {
-                match litrs::Literal::try_from(l).expect("literal was not a literal") {
-                    litrs::Literal::String(s) => s.value().to_string(),
-                    litrs::Literal::Char(s) => s.value().to_string(),
-                    v => v.to_string(),
-                }
-            }
-            Literal::True => "true".to_string(),
-            Literal::False => "false".to_string(),
-        }
-    }
-}
-
-struct ConcatInput {
-    pub args: Punctuated<Literal, Token![,]>,
-}
-
-impl Parse for ConcatInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            args: Punctuated::parse_terminated(input)?,
-        })
-    }
-}
-
-impl_cps!(
-    use syn::punctuated::Punctuated;
-    use syn::Token;
-    use crate::ConcatInput;
-
-    fn concat(tokens: proc_macro2::TokenStream) -> proc_macro2::Literal {
-        let err = format!(
-            "arguments given were not comma separated: {}",
-            tokens.to_string()
-        );
-        let parsed: ConcatInput = match syn::parse2(tokens) {
-            Err(e) => panic!("error parsing concat input: {}, {}", err, e),
-            Ok(v) => v,
-        };
-
-        let mut string = String::new();
-        for token in parsed.args.into_iter() {
-            string += &token.to_string();
-        }
-        proc_macro2::Literal::string(&string)
-    }
-);
+export_std_cps!(concat);
+export_std_cps!(stringify);
+export_std_cps!(include);

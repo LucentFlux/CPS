@@ -4,7 +4,7 @@ use std::fmt::Display;
 use syn::ext::IdentExt;
 use syn::parse::discouraged::Speculative;
 use syn::parse::{Parse, ParseBuffer, ParseStream};
-use syn::token::{Brace, Paren, Token};
+use syn::token::{Brace, Paren};
 use syn::{parse2, Ident, Macro, MacroDelimiter, Token};
 
 trait MyExtendable {

@@ -1,15 +1,18 @@
 # CPS (AKA macro variables & let expressions)
 
+This crate allows for more traditional "inside-out" functions to be written in the rust macro syntax, allowing maintainable macros to be written in-line without needing to switch to a proc-macro.
+
 TLDR:
 ```rust
 use cps::cps;
 
-#[cps]
+#[cps] // Add this macro to unlock additional syntax
 macro_rules! foo {
     (1) => { BaseCase1 };
     (2) => { BaseCase2 };
 
     () =>
+    // !!! NEW SYNTAX HERE !!!
     let $x:tt = foo!(1) in
     let $y:tt = foo!(2) in
     {
@@ -24,7 +27,7 @@ fn main() {
 ```
 
 # Why?
-## Reason 1 - Maintainability
+## Reason 1 - Readability and Maintainability
 
 Macro execution order is confusing. Because each macro is passed a token tree, macros execute outside-in. For example:
 
@@ -35,8 +38,15 @@ macro_rules! dog {
     };
 }
 
+macro_rules! dog_says {
+    () => 
+    {
+        stringify!(dog!())
+    };
+}
+
 fn main() {
-    println!("{}", stringify!(dog!())); // Prints "dog!()", not "woof"
+    println!("{}", dog_says!()); // Prints "dog!()", not "woof"
 }
 ```
 
@@ -51,8 +61,15 @@ macro_rules! dog {
     };
 }
 
+macro_rules! dog_says {
+    () => 
+    {
+        dog!(stringify)
+    };
+}
+
 fn main() {
-    println!("{}", dog!(stringify)); // Prints "woof"
+    println!("{}", dog_says!()); // Prints "woof" but is hard to read
 }
 ```
 
@@ -80,9 +97,9 @@ fn main() {
 }
 ```
 
-## Reason 2 - Expanding macros
+## Reason 2 - Extendability
 
-The `let` expressions in CPS macros must be built from other CPS macros, but the body doesn't. This allows us to add computation to be substituted in to macros developed by other people.
+The `let` expressions in CPS macros must be built from other CPS macros, while the body mustn't. This allows us to add computation to be substituted in to macros developed by other people.
 For example:
 
 ```rust

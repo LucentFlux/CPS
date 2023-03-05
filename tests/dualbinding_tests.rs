@@ -22,7 +22,6 @@ macro_rules! macro1 {
     };
 }
 
-
 #[test]
 fn stringify_order_single_call() {
     assert_eq!(macro1!(stringify_two), "CaseACaseB");

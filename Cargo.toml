@@ -1,6 +1,6 @@
 [package]
 name = "cps"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 description = "Assists in the creation of readable and maintainable macro_rules! macros"
@@ -9,16 +9,10 @@ repository = "https://github.com/LucentFlux/CPS"
 readme = "README.md"
 keywords = ["macro", "macros", "utility"]
 categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
-include = [
-    "/Cargo.toml",
-    "/LICENSE",
-    "/README.md",
-    "/src/**",
-    "/tests/**",
-]
+include = ["/Cargo.toml", "/LICENSE", "/README.md", "/src/**", "/tests/**"]
 
 [dependencies]
-syn = { version = "1.0", features=["full"] }
+syn = { version = "1.0", features = ["full"] }
 proc-macro2 = "1.0"
 quote = "1.0"
 litrs = "0.2"

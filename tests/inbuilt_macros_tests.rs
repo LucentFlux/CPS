@@ -22,6 +22,13 @@ macro_rules! macro1 {
     {
         $($z)*
     };
+
+    (@run include) =>
+    let $($y:tt)* = cps::include!("tests/test_file.txt") in
+    let $z:tt = cps::stringify!($($y)*) in
+    {
+        $z
+    };
 }
 
 #[test]
@@ -32,4 +39,12 @@ fn stringify_call() {
 #[test]
 fn concat_call() {
     assert_eq!(macro1!(@run concat), "Got: 3BaseCasetrue");
+}
+
+#[test]
+fn include_call() {
+    assert_eq!(
+        macro1!(@run include),
+        "this is a test file used for include macros testing!"
+    );
 }
