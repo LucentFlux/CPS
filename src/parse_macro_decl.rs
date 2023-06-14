@@ -224,21 +224,6 @@ pub struct MacroRepetition {
 }
 
 impl MacroRepetition {
-    pub fn build_output_clone(&self) -> TokenStream {
-        let Self {
-            dollar_sign,
-            sub_matches,
-            rep_sep,
-            ..
-        } = self;
-
-        let sub_matches = sub_matches.build_output_clone();
-
-        return quote! {
-            #dollar_sign ( #sub_matches ) #rep_sep *
-        };
-    }
-
     fn parse_helper(input: ParseStream) -> syn::Result<Self> {
         let dollar_sign = input.parse()?;
         let (paren, rep_pattern) = parse_paren(input)?;
@@ -297,22 +282,6 @@ pub enum MacroMatch {
     Group(Delimiter, MacroMatcher),
     Identifier(MacroVariableIdentifier),
     Repetition(MacroRepetition),
-}
-
-impl MacroMatch {
-    pub fn build_output_clone(&self) -> TokenStream {
-        match self {
-            MacroMatch::Ident(t) => quote! {#t},
-            MacroMatch::Punct(t) => quote! {#t},
-            MacroMatch::Literal(t) => quote! {#t},
-            MacroMatch::Group(d, t) => {
-                let oc = t.build_output_clone();
-                delimiter_to_tokens(&d, &oc)
-            }
-            MacroMatch::Identifier(i) => i.build_output_clone(),
-            MacroMatch::Repetition(r) => r.build_output_clone(),
-        }
-    }
 }
 
 fn parse_ident_or_recursive(input_fork: &ParseBuffer) -> Option<MacroMatch> {
@@ -374,19 +343,6 @@ impl ToTokens for MacroMatch {
 #[derive(Clone)]
 pub struct MacroMatcher {
     pub matches: Vec<MacroMatch>,
-}
-
-impl MacroMatcher {
-    pub fn build_output_clone(&self) -> TokenStream {
-        let mapped = self
-            .matches
-            .iter()
-            .map(|m| m.build_output_clone())
-            .collect::<Vec<TokenStream>>();
-        quote! {
-            #(#mapped)*
-        }
-    }
 }
 
 impl Parse for MacroMatcher {

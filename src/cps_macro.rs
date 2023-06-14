@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::parse_macro_decl::{begins_with_cps_marker, CPSMacroRule, MacroMatch, MacroMatcher};
 use proc_macro2::{Ident, TokenStream};
-use quote::{quote, ToTokens};
+use quote::{quote, ToTokens, format_ident};
 use syn::punctuated::Punctuated;
 use syn::{parse_quote, ItemMacro, Token};
 
@@ -23,7 +23,7 @@ pub fn build_next_step(
     quote! {
          #next_head ! { @_cps |:|
             #next_program |:|
-            { #impl_tokens } #next_stack
+            ({ #impl_tokens }, { #impl_tokens }) #next_stack
         }
     }
 }
@@ -53,8 +53,9 @@ fn add_cps(
         .rev()
         .map(|lb| lb.pattern.clone())
         .collect::<Vec<MacroMatch>>();
+    let result_pattern_duds: Vec<_> = result_patterns.iter().enumerate().map(|(i, _)| format_ident!("_cps_res{}", i)).collect();
     let base_case: CPSMacroRule = syn::parse2(quote! {
-        (@_cps |:|  |:| #( { #result_patterns } )* { #pattern } | ) => {
+        (@_cps |:|  |:| #( ({ #result_patterns }, { $($ #result_pattern_duds :tt)* }) )* ({ #pattern }, { $($_cps_dud_pattern:tt)* }) | ) => {
             #impl_tokens
         }
     })
@@ -69,7 +70,7 @@ fn add_cps(
         quote! { $($_cps_stack)* },
     );
     let inner_base_case: CPSMacroRule = syn::parse2(quote!{
-        (@_cps |:| ( $_cps_next_head:tt ) $(| ( $_cps_next_tail:tt ) )* |:| #( { #result_patterns } )* { #pattern } | $($_cps_stack:tt)*) => {
+        (@_cps |:| ( $_cps_next_head:tt ) $(| ( $_cps_next_tail:tt ) )* |:| #( ({ #result_patterns }, { $($ #result_pattern_duds :tt)* }) )* ({ #pattern }, { $($_p:tt)* }) | $($_cps_stack:tt)*) => {
             #next_step
         }
     }).expect("could not build cps inner base case");
@@ -77,18 +78,18 @@ fn add_cps(
 
     // Create a pattern for each intermediate step as earlier results may be used in later executions
     let mut acc_result_patterns = Vec::new();
+    let mut acc_result_tts = Vec::new();
     let mut acc_result_clones = Vec::new();
-    let pattern_output_clone = pattern.build_output_clone();
-    for binding in arm.let_bindings.iter() {
+    for (i, binding) in arm.let_bindings.iter().enumerate() {
         let path_indirection = binding.macro_name_indirection.clone();
         let binding_macro_path = binding.macro_invocation.path.clone();
         let binding_macro_args = binding.macro_invocation.tokens.clone();
         // Successful inner case
         let inter_case: CPSMacroRule = syn::parse2(quote!{
-            (@_cps |:| $( ( $_cps_next:tt ) )|* |:| #( { #acc_result_patterns } )* { #pattern } | $($_cps_stack:tt)*) => {
+            (@_cps |:| $( ( $_cps_next:tt ) )|* |:| #( ({ #acc_result_patterns }, { #acc_result_tts }) )* ({ #pattern }, {$($_cps_arg:tt)*}) | $($_cps_stack:tt)*) => {
                 #path_indirection #binding_macro_path ! { @_cps |:|
                     ( #macro_name ) $(| ( $_cps_next ) )* |:|
-                    { #binding_macro_args } | #( { #acc_result_clones } )* { #pattern_output_clone } | $($_cps_stack)*
+                    ({ #binding_macro_args }, { #binding_macro_args }) | #( ({ #acc_result_clones }, { #acc_result_clones }) )* ({$($_cps_arg)*}, {$($_cps_arg)*}) | $($_cps_stack)*
                 }
             }
         }).expect("could not build cps inter case");
@@ -103,8 +104,11 @@ fn add_cps(
             })
             .collect::<Vec<_>>();
         valid_patterns.push(pattern.clone());
+        let valid_pattern_duds: Vec<_> = valid_patterns.iter().enumerate().map(|(i, _)| format_ident!("_cps_res{}", i)).collect();
         let expected_pattern = valid_patterns.remove(0);
-        let invalid_match: MacroMatcher = syn::parse2(quote!{@_cps |:| $( ( $_cps_next:tt ) )|* |:| { $($unexpected:tt)* } #( { #valid_patterns } )* | $($_cps_stack:tt)*}).expect("could not build cps inter debug match");
+        let invalid_match: MacroMatcher = syn::parse2(quote!{
+            @_cps |:| $( ( $_cps_next:tt ) )|* |:| ({ $($unexpected:tt)* }, { $($_cps_un2:tt)* }) #( ({ #valid_patterns }, { $($ #valid_pattern_duds :tt)* }) )* | $($_cps_stack:tt)*
+        }).expect("could not build cps inter debug match");
         output_debug_cases
             .entry(invalid_match.to_token_stream().to_string())
             .or_insert((invalid_match, vec![]))
@@ -114,19 +118,12 @@ fn add_cps(
         let result_pattern = result_patterns
             .pop()
             .expect("different number of matches to let bindings");
-        acc_result_clones.insert(0, result_pattern.build_output_clone());
+
+        let tt_ident = format_ident!("_cps_arg{}", i);
+        acc_result_tts.insert(0, quote!{$($ #tt_ident :tt)*});
+        acc_result_clones.insert(0, quote!{$($ #tt_ident)*});
         acc_result_patterns.insert(0, result_pattern);
     }
-
-    // Create an entry point from outside a cps context
-    let pattern_out = pattern.build_output_clone();
-    let entry: CPSMacroRule = syn::parse2(quote! {
-        (#pattern) => {
-            #macro_name ! { @_cps |:|  |:| { #pattern_out } | }
-        }
-    })
-    .expect("could not build cps entry case");
-    output_cases.push(entry);
 
     return (output_cases, output_debug_cases);
 }
@@ -165,7 +162,8 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
 
     // Collate same errors into messages
     let error_rules = error_rules.into_iter().map(|(_, (error_match, expected_patterns))| {
-        let err_msg = if let [expected_pattern] = &expected_patterns.as_slice() {
+        let err_msg = if expected_patterns.len() == 1 {
+            let expected_pattern = expected_patterns.first().expect("len is 1");
             format!(
                 "while evaluating macro {}, expected something that matches `{}` but got `",
                 macro_name.to_string(),
@@ -190,18 +188,23 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
 
     // Add some fallback CPS rules that can help with debugging
     let fallback_rules = quote! {
+        // If nothing else matches
+        (@_cps |:| $(($call_stack:tt))|* |:| ({ $($unexpected:tt)* }, { $($_un2:tt)* }) $($data_stack:tt)* ) => {
+            std::compile_error!(concat!("cannot match `", stringify!($($unexpected)*), "`"));
+        };
         // Base case but wrong arguments
         (@_cps |:|  |:|  |) => {
             std::compile_error!("base case has no result - this is a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues");
         };
-        (@_cps |:|  |:|  $($stack:tt)* ) => {
-            std::compile_error!(concat!("base case has invalid stack: `", stringify!($($stack)*), "` - this is a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues"));
-        };
-        (@_cps |:| $(($call_stack:tt))|* |:|  $($data_stack:tt)* ) => {
-            std::compile_error!(concat!("cps macro evaluation resulted in an invalid state, with call stack `", stringify!($($call_stack)*), "` and data stack `", stringify!($($data_stack)*), "` - this is probably a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues"));
-        };
         (@_cps $($everything:tt)*) => {
             std::compile_error!(concat!("cps macro evaluation resulted in an invalid state: `", stringify!($($everything)*), "` - this is a bug with the cps crate and should be reported here: https://github.com/LucentFlux/CPS/issues"));
+        };
+    };
+
+    // Create an entry point from outside a cps context
+    let entry = quote! {
+        ($($input:tt)*) => {
+            #macro_name ! { @_cps |:|  |:| ({ $($input)* }, { $($input)* }) | }
         };
     };
 
@@ -215,6 +218,7 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
             #(#new_rules ;)*
             #(#error_rules ;)*
             #fallback_rules
+            #entry
         } #semi
     };
 

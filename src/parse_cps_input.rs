@@ -8,11 +8,12 @@ use syn::Token;
 
 pub const CPS_MARKER_STR: &'static str = "_cps";
 
+/// The 'divider' token set we use to separate the call stack from data stack. Corresponds to `|:|`.
 #[derive(Clone)]
 pub struct Divider {
-    lhs: Token![|],
-    mid: Token![:],
-    rhs: Token![|],
+    _lhs: Token![|],
+    _mid: Token![:],
+    _rhs: Token![|],
 }
 
 impl Divider {
@@ -24,16 +25,17 @@ impl Divider {
 impl Parse for Divider {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(Divider {
-            lhs: input.parse()?,
-            mid: input.parse()?,
-            rhs: input.parse()?,
+            _lhs: input.parse()?,
+            _mid: input.parse()?,
+            _rhs: input.parse()?,
         })
     }
 }
 
+/// An identifier enclosed in parenthesis `()`.
 #[derive(Clone)]
 pub struct ParenthesizedIdent {
-    paren: Paren,
+    _paren: Paren,
     pub ident: Ident,
 }
 
@@ -41,7 +43,7 @@ impl Parse for ParenthesizedIdent {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let (paren, ident) = parse_paren(input)?;
         Ok(Self {
-            paren,
+            _paren: paren,
             ident: syn::parse2(ident)?,
         })
     }
@@ -56,16 +58,20 @@ impl ToTokens for ParenthesizedIdent {
     }
 }
 
+/// A token stream enclosed in braces `{}`.
 #[derive(Clone)]
 pub struct BracedTS {
-    paren: Brace,
+    _paren: Brace,
     pub internal: TokenStream,
 }
 
 impl Parse for BracedTS {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let (paren, internal) = parse_brace(input)?;
-        Ok(Self { paren, internal })
+        Ok(Self {
+            _paren: paren,
+            internal,
+        })
     }
 }
 
@@ -78,22 +84,86 @@ impl ToTokens for BracedTS {
     }
 }
 
+/// Comma separated identical expressions in parentheses `{..foo..}, {..foo..}`
+#[derive(Clone)]
+pub struct StackElementInner {
+    pub lhs: BracedTS,
+    _comma: Token![,],
+    pub rhs: BracedTS,
+}
+
+impl Parse for StackElementInner {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let lhs = BracedTS::parse(input)?;
+        let comma = input.parse()?;
+        let rhs = BracedTS::parse(input)?;
+
+        Ok(Self {
+            lhs,
+            _comma: comma,
+            rhs,
+        })
+    }
+}
+
+impl ToTokens for StackElementInner {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let Self { lhs, rhs, .. } = self;
+        *tokens = quote!(
+            #tokens #lhs, #rhs
+        )
+    }
+}
+
+/// An element on the stack: two identical expressions in parentheses `({..foo..}, {..foo..})`
+#[derive(Clone)]
+pub struct StackElement {
+    _paren: Paren,
+    pub lhs: BracedTS,
+    _comma: Token![,],
+    pub rhs: BracedTS,
+}
+
+impl Parse for StackElement {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let (paren, internal) = parse_paren(input)?;
+
+        let StackElementInner { lhs, _comma, rhs } = syn::parse2(internal)?;
+
+        Ok(Self {
+            _paren: paren,
+            lhs,
+            _comma,
+            rhs,
+        })
+    }
+}
+
+impl ToTokens for StackElement {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let Self { lhs, rhs, .. } = self;
+        *tokens = quote!(
+            #tokens (#lhs, #rhs)
+        )
+    }
+}
+
 #[derive(Clone)]
 pub struct MacroInput {
-    marker: Token![@],
+    _marker: Token![@],
     ident: Ident,
-    div1: Divider,
+    _div1: Divider,
     pub program: Punctuated<ParenthesizedIdent, Token![|]>,
-    div2: Divider,
-    pub stack: Vec<(Vec<BracedTS>, Token![|])>,
+    _div2: Divider,
+    pub stack: Vec<(Vec<StackElement>, Token![|])>,
 }
 
 impl Parse for MacroInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let res = MacroInput {
-            marker: input.parse()?,
+            _marker: input.parse()?,
             ident: input.parse()?,
-            div1: input.parse()?,
+            _div1: input.parse()?,
             program: {
                 let mut program = Punctuated::new();
                 if !Divider::peek(input) {
@@ -109,7 +179,7 @@ impl Parse for MacroInput {
                 }
                 program
             },
-            div2: input.parse()?,
+            _div2: input.parse()?,
             stack: {
                 let mut stack = Vec::new();
                 while !input.is_empty() {

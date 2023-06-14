@@ -20,7 +20,7 @@ pub fn perform_macro<M: CPSProcMacro>(item: TokenStream) -> TokenStream {
     let (args, _) = m.stack.remove(0);
     assert_eq!(args.len(), 1);
     let arg = args.first().expect("found no argument to CPS macro");
-    let arg = syn::parse2(arg.internal.clone().into_token_stream())
+    let arg = syn::parse2(arg.lhs.internal.clone().into_token_stream())
         .expect("failed to parse CPS macro input item");
 
     // Evaluate
