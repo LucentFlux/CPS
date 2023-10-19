@@ -1,6 +1,8 @@
-[![Crates.io](https://img.shields.io/crates/v/cargo-readme.svg)](https://crates.io/crates/cps)
-
 # CPS (AKA macro variables & let expressions)
+
+[![crates.io](https://img.shields.io/crates/v/cps.svg)](https://crates.io/crates/cps)
+[![docs.rs](https://img.shields.io/docsrs/cps)](https://docs.rs/cps/latest/cps/)
+[![crates.io](https://img.shields.io/crates/l/cps.svg)](https://github.com/LucentFlux/cps/blob/main/LICENSE)
 
 This crate allows for more traditional "inside-out" functions to be written in the rust macro syntax, allowing maintainable macros to be written in-line without needing to switch to a proc-macro.
 
