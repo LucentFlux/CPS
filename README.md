@@ -24,10 +24,7 @@ macro_rules! foo {
     };
 }
 
-
-fn main() {
-    assert_eq!(foo!(), "BaseCase1 BaseCase2");
-}
+assert_eq!(foo!(), "BaseCase1 BaseCase2");
 ```
 
 # Why?
@@ -49,9 +46,7 @@ macro_rules! dog_says {
     };
 }
 
-fn main() {
-    println!("{}", dog_says!()); // Prints "dog!()", not "woof"
-}
+println!("{}", dog_says!()); // Prints "dog!()", not "woof"
 ```
 
 Reading the above code as if macros are classical functions, you may expect this program to print `woof`. However unfortunately it prints `dog!()`, as if `println!` expands its macros while `stringify!` does not. This makes macros hard to maintain.
@@ -72,9 +67,7 @@ macro_rules! dog_says {
     };
 }
 
-fn main() {
-    println!("{}", dog_says!()); // Prints "woof" but is hard to read
-}
+println!("{}", dog_says!()); // Prints "woof" but is hard to read
 ```
 
 While now having the correct behaviour, this is difficult to maintain as the flow of execution is confusing. Using CPS instead we get:
@@ -98,9 +91,7 @@ macro_rules! dog_says {
     };
 }
 
-fn main() {
-    println!("{}", dog_says!()); // Prints "woof"
-}
+println!("{}", dog_says!()); // Prints "woof"
 ```
 
 ## Reason 2 - Extendability
@@ -175,6 +166,8 @@ macro_rules! foo {
     };
 }
 ```
+
+Note that the `include` and `include_str` macros resolve paths from the manifest file directory rather than the invocation location, due to the infamous [issue 54725](https://github.com/rust-lang/rust/issues/54725).
 
 ## Portability
 

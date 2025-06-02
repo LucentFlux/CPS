@@ -24,10 +24,16 @@ macro_rules! macro1 {
     };
 
     (@run include) =>
-    let $($y:tt)* = cps::include_str!("tests/test_file.txt") in
+    let $($y:tt)* = cps::include!("tests/test_file.txt") in
     let $z:tt = cps::stringify!($($y)*) in
     {
         $z
+    };
+
+    (@run include_str) =>
+    let $x:literal = cps::include_str!("tests/test_file.txt") in
+    {
+        $x
     };
 }
 
@@ -46,5 +52,13 @@ fn include_call() {
     assert_eq!(
         macro1!(@run include),
         "this is a test file used for include macros testing!"
+    );
+}
+
+#[test]
+fn include_str_call() {
+    assert_eq!(
+        macro1!(@run include_str),
+        "this is a test file\nused for include macros testing!"
     );
 }

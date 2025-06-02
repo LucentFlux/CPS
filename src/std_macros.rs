@@ -1,4 +1,5 @@
 pub mod concat;
+pub mod include;
 pub mod include_str;
 pub mod stringify;
 
