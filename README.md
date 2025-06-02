@@ -12,8 +12,8 @@ use cps::cps;
 
 #[cps] // Add this macro to unlock additional syntax
 macro_rules! foo {
-    (1) => { BaseCase1 };
-    (2) => { BaseCase2 };
+    (1) => { "BaseCase1" };
+    (2) => { "BaseCase2" };
 
     () =>
     // !!! NEW SYNTAX HERE !!!
@@ -80,6 +80,8 @@ fn main() {
 While now having the correct behaviour, this is difficult to maintain as the flow of execution is confusing. Using CPS instead we get:
 
 ```rust
+use cps::cps;
+
 #[cps]
 macro_rules! dog {
     () => {
@@ -90,7 +92,7 @@ macro_rules! dog {
 #[cps]
 macro_rules! dog_says {
     () => 
-    let $x::tt = dog!() in
+    let $x:tt = dog!() in
     {
         stringify!($x)
     };
@@ -107,6 +109,8 @@ The `let` expressions in CPS macros must be built from other CPS macros, while t
 For example:
 
 ```rust
+use cps::cps;
+
 // Non-CPS macro from another crate
 macro_rules! load_thing {
     ($path:expr) => {
@@ -117,7 +121,7 @@ macro_rules! load_thing {
 #[cps]
 macro_rules! my_load_thing {
     ($path:expr) => 
-    let $new_path::expr = cps::concat!("src/", $path) in
+    let $new_path:expr = cps::concat!("src/", $path) in
     {
         load_thing!($new_path)
     };
@@ -126,3 +130,71 @@ macro_rules! my_load_thing {
 
 This crate comes with a collection of CPS macros that are copies of macros in the standard library, that can be used
 to perform compile-time computation on token trees in a maintainable way.
+
+# Usage Notes
+
+Macros-by-example are hard, difficult to maintain, and you should always consider writing a proc-macro instead.
+This library aims to make the macros that you *do* write more maintainable. Please recurse responsibly.
+
+CPS converts iteration into recursion. Therefore when using this library you may reach the recursion limit (128 at the time of writing). You can raise this using `#![recursion_limit = "1024"]` but your build times may suffer.
+
+## Standard Library Macros
+
+Any macro `let` expression must have a macro on the right-hand side that was marked as `#[cps]`. The following example will not work:
+
+```rust
+use cps::cps;
+
+#[cps]
+macro_rules! foo {
+    () => { BaseCase };
+
+    (bar) =>
+    let $x:tt = foo!() in
+    let $y:tt = stringify!($x) in // Issue: stringify is not a cps macro
+    {
+        $y
+    };
+}
+```
+
+Instead, use the `cps` variants of builtin macros:
+
+```rust
+use cps::cps;
+
+#[cps]
+macro_rules! foo {
+    () => { BaseCase };
+
+    (bar) =>
+    let $x:tt = foo!() in
+    let $y:tt = cps::stringify!($x) in // cps::stringify is a cps version of `stringify`
+    {
+        $y
+    };
+}
+```
+
+## Portability
+
+CPS macros are portable, meaning they can be invoked inside of crates that do not use the `cps` crate. However their dependent macros are not inlined, so all dependent macro crates must be in scope. This includes `cps` if any of the standard library macros are used. Therefore the following code is recommended:
+
+```rust
+#[doc(hidden)]
+pub use cps::cps;
+
+#[cps]
+macro_rules! foo {
+    () => { BaseCase };
+
+    (bar) =>
+    let $x:tt = foo!() in
+    let $y:tt = $crate::cps::stringify!($x) in // Refer to a version of `cps` that we bring along with us.
+    {
+        $y
+    };
+}
+```
+
+Not following this pattern usually results in an error like ``` error[E0433]: failed to resolve: use of unresolved module or unlinked crate `cps` ```.

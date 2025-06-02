@@ -53,5 +53,5 @@ pub fn perform_macro<M: CPSProcMacro>(item: TokenStream) -> TokenStream {
         next_stack = quote! {#next_stack |}
     }
 
-    return build_next_step(next_call.clone(), remaining_calls, res, next_stack);
+    build_next_step(next_call.clone(), remaining_calls, res, next_stack)
 }

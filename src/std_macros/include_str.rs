@@ -8,7 +8,7 @@ fn do_include(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         Ok(v) => v,
     };
 
-    let path = match litrs::Literal::try_from(path.clone()).expect("literal was not a literal") {
+    let path = match litrs::Literal::from(path.clone()) {
         litrs::Literal::String(s) => s.value().to_string(),
         _ => panic!("path {} was not a string", path),
     };

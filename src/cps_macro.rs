@@ -28,6 +28,7 @@ pub fn build_next_step(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn add_cps(
     macro_name: &Ident,
     arm: CPSMacroRule,
@@ -81,7 +82,7 @@ fn add_cps(
     let mut acc_result_tts = Vec::new();
     let mut acc_result_clones = Vec::new();
     for (i, binding) in arm.let_bindings.iter().enumerate() {
-        let path_indirection = binding.macro_name_indirection.clone();
+        let path_indirection = binding.macro_name_indirection;
         let binding_macro_path = binding.macro_invocation.path.clone();
         let binding_macro_args = binding.macro_invocation.tokens.clone();
         // Successful inner case
@@ -125,7 +126,7 @@ fn add_cps(
         acc_result_patterns.insert(0, result_pattern);
     }
 
-    return (output_cases, output_debug_cases);
+    (output_cases, output_debug_cases)
 }
 
 pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
@@ -140,7 +141,7 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
     let macro_name = m.ident.expect(err);
 
     // Parse rules
-    let rules_tokens = TokenStream::from(m.mac.tokens);
+    let rules_tokens = m.mac.tokens;
     let rules: Punctuated<CPSMacroRule, Token![;]> = parse_quote! { #rules_tokens };
 
     // Check that all rules are of valid form
@@ -166,7 +167,7 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
             let expected_pattern = expected_patterns.first().expect("len is 1");
             format!(
                 "while evaluating macro {}, expected something that matches `{}` but got `",
-                macro_name.to_string(),
+                macro_name,
                 expected_pattern.to_token_stream()
             )
         } else {
@@ -174,7 +175,7 @@ pub fn impl_cps(_attr: TokenStream, m: ItemMacro) -> TokenStream {
             expected_patterns.iter().map(|expected_pattern| format!("`{}`", expected_pattern.to_token_stream())).fold("".to_owned(), |a, b| a + " or " + &b);
             format!(
                 "while evaluating macro {}, expected something that matches one of {} but got `",
-                macro_name.to_string(),
+                macro_name,
                 parts
             )
         };

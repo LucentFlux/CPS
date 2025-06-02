@@ -1,13 +1,6 @@
 use cps::cps;
 
 #[cps]
-macro_rules! example {
-    () => {
-        BaseCase
-    };
-}
-
-#[cps]
 macro_rules! macro1 {
     () => { BaseCase };
 

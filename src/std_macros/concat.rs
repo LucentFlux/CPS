@@ -4,9 +4,9 @@ use syn::punctuated::Punctuated;
 use syn::{Ident, LitBool, Token};
 
 enum Literal {
-    Literal(proc_macro2::Literal),
     True,
     False,
+    Other(proc_macro2::Literal),
 }
 
 impl Parse for Literal {
@@ -20,24 +20,22 @@ impl Parse for Literal {
                 false => Ok(Self::False),
             };
         }
-        Ok(Self::Literal(input.parse().map_err(|e| {
+        Ok(Self::Other(input.parse().map_err(|e| {
             input.error(format!("{} when parsing token {}", e, input))
         })?))
     }
 }
 
-impl ToString for Literal {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Literal::Literal(l) => {
-                match litrs::Literal::try_from(l).expect("literal was not a literal") {
-                    litrs::Literal::String(s) => s.value().to_string(),
-                    litrs::Literal::Char(s) => s.value().to_string(),
-                    v => v.to_string(),
-                }
-            }
-            Literal::True => "true".to_string(),
-            Literal::False => "false".to_string(),
+            Self::Other(lit) => match litrs::Literal::from(lit) {
+                litrs::Literal::String(s) => s.value().fmt(f),
+                litrs::Literal::Char(s) => s.value().fmt(f),
+                v => v.fmt(f),
+            },
+            Self::True => write!(f, "true"),
+            Self::False => write!(f, "false"),
         }
     }
 }
@@ -58,10 +56,7 @@ super::impl_std_cps!(
     use super::ConcatInput;
 
     fn concat(tokens: proc_macro2::TokenStream) -> proc_macro2::Literal {
-        let err = format!(
-            "arguments given were not comma separated: {}",
-            tokens.to_string()
-        );
+        let err = format!("arguments given were not comma separated: {}", tokens);
         let parsed: ConcatInput = match syn::parse2(tokens) {
             Err(e) => panic!("error parsing concat input: {}, {}", err, e),
             Ok(v) => v,

@@ -13,7 +13,7 @@ trait MyExtendable {
 
 impl<T> MyExtendable for syn::Result<T> {
     fn add_message<S: Display>(self, input: ParseStream, msg: S) -> Self {
-        self.map_err(|e| input.error(format!("{}: {}", msg, e.to_string())))
+        self.map_err(|e| input.error(format!("{}: {}", msg, e)))
     }
 }
 
@@ -30,7 +30,7 @@ fn parse_delimiter(input: ParseStream) -> syn::Result<(MacroDelimiter, TokenStre
                     return Err(err);
                 }
             };
-            Ok(((delimiter, TokenStream::from(g.stream())), rest))
+            Ok(((delimiter, g.stream()), rest))
         } else {
             Err(err)
         }
@@ -64,7 +64,7 @@ pub fn parse_paren(input: ParseStream) -> syn::Result<(Paren, TokenStream)> {
         MacroDelimiter::Paren(p) => p,
         _ => return Err(err),
     };
-    return Ok((paren, ts));
+    Ok((paren, ts))
 }
 
 pub fn parse_brace(input: ParseStream) -> syn::Result<(Brace, TokenStream)> {
@@ -77,21 +77,21 @@ pub fn parse_brace(input: ParseStream) -> syn::Result<(Brace, TokenStream)> {
         MacroDelimiter::Brace(p) => p,
         _ => return Err(err),
     };
-    return Ok((brace, ts));
+    Ok((brace, ts))
 }
 
 pub fn begins_with_cps_marker(item: &MacroMatcher) -> bool {
-    if let Some(MacroMatch::Punct(p)) = item.matches.get(0) {
+    if let Some(MacroMatch::Punct(p)) = item.matches.first() {
         if p.as_char() == '@' {
-            if let Some(MacroMatch::Ident(i)) = item.matches.get(0) {
-                if i.to_string() == "_cps" {
+            if let Some(MacroMatch::Ident(i)) = item.matches.first() {
+                if *i == "_cps" {
                     return true;
                 }
             }
         }
     }
 
-    return false;
+    false
 }
 
 #[derive(Debug, Clone)]
@@ -136,12 +136,12 @@ impl MacroVariableIdentifier {
         let identifier = input.parse()?;
         let colon = input.parse()?;
         let macro_frag_spec = input.parse()?;
-        return Ok(Self {
+        Ok(Self {
             dollar_sign,
             identifier,
             colon,
             macro_frag_spec,
-        });
+        })
     }
 }
 
@@ -188,7 +188,7 @@ impl Parse for MacroRepOp {
         if input.peek(Token![?]) {
             return Ok(Self::Optional(input.parse()?));
         }
-        return Err(input.error("expected a repetition operator"));
+        Err(input.error("expected a repetition operator"))
     }
 }
 
@@ -276,20 +276,20 @@ fn parse_ident_or_recursive(input_fork: &ParseBuffer) -> Option<MacroMatch> {
     if input_fork.peek(Token![$]) {
         if input_fork.peek2(Ident::peek_any) {
             // Identifier
-            return input_fork.parse().map(|i| MacroMatch::Identifier(i)).ok();
+            return input_fork.parse().map(MacroMatch::Identifier).ok();
         } else if input_fork.peek2(Paren) {
             // Repetition
-            return input_fork.parse().map(|i| MacroMatch::Repetition(i)).ok();
+            return input_fork.parse().map(MacroMatch::Repetition).ok();
         }
     }
 
-    return None;
+    None
 }
 
 impl Parse for MacroMatch {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let input_fork = input.fork();
-        return match parse_ident_or_recursive(&input_fork) {
+        match parse_ident_or_recursive(&input_fork) {
             Some(m) => {
                 input.advance_to(&input_fork);
                 Ok(m)
@@ -311,7 +311,7 @@ impl Parse for MacroMatch {
                     }
                 }
             }
-        };
+        }
     }
 }
 
@@ -321,7 +321,7 @@ impl ToTokens for MacroMatch {
             MacroMatch::Ident(t) => t.to_tokens(tokens),
             MacroMatch::Punct(t) => t.to_tokens(tokens),
             MacroMatch::Literal(t) => t.to_tokens(tokens),
-            MacroMatch::Group(d, t) => delimiter_to_tokens(&d, &t).to_tokens(tokens),
+            MacroMatch::Group(d, t) => delimiter_to_tokens(d, &t).to_tokens(tokens),
             MacroMatch::Identifier(i) => i.to_tokens(tokens),
             MacroMatch::Repetition(r) => r.to_tokens(tokens),
         }
@@ -341,7 +341,7 @@ impl Parse for MacroMatcher {
             matches.push(new_match)
         }
 
-        return Ok(Self { matches });
+        Ok(Self { matches })
     }
 }
 
@@ -411,14 +411,14 @@ impl Parse for CPSMacroRule {
 
         let (impl_brace, impl_tokens) = parse_delimiter(input)?;
 
-        return Ok(Self {
+        Ok(Self {
             pattern_brace,
             pattern,
             let_bindings,
             fat_arrow,
             impl_brace,
             impl_tokens,
-        });
+        })
     }
 }
 

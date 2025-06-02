@@ -6,7 +6,7 @@ use syn::punctuated::Punctuated;
 use syn::token::{Brace, Or, Paren};
 use syn::Token;
 
-pub const CPS_MARKER_STR: &'static str = "_cps";
+pub const CPS_MARKER_STR: &str = "_cps";
 
 /// The 'divider' token set we use to separate the call stack from data stack. Corresponds to `|:|`.
 #[derive(Clone)]
@@ -18,7 +18,7 @@ pub struct Divider {
 
 impl Divider {
     fn peek(input: ParseStream) -> bool {
-        return input.peek(Token![|]) && input.peek2(Token![:]) && input.peek3(Token![|]);
+        input.peek(Token![|]) && input.peek2(Token![:]) && input.peek3(Token![|])
     }
 }
 
@@ -202,11 +202,11 @@ impl Parse for MacroInput {
                 format!(
                     "incorrect cps macro marker: expected {} but got {}",
                     CPS_MARKER_STR,
-                    res.ident.to_string()
+                    res.ident
                 ),
             ));
         }
 
-        return Ok(res);
+        Ok(res)
     }
 }
