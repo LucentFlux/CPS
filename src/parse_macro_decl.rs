@@ -131,18 +131,6 @@ pub struct MacroVariableIdentifier {
 }
 
 impl MacroVariableIdentifier {
-    pub fn build_output_clone(&self) -> TokenStream {
-        let Self {
-            dollar_sign,
-            identifier,
-            ..
-        } = self;
-
-        return quote! {
-            #dollar_sign #identifier
-        };
-    }
-
     fn parse_helper(input: ParseStream) -> syn::Result<Self> {
         let dollar_sign = input.parse()?;
         let identifier = input.parse()?;
@@ -217,7 +205,7 @@ impl ToTokens for MacroRepOp {
 #[derive(Clone)]
 pub struct MacroRepetition {
     pub dollar_sign: Token![$],
-    pub paren: Paren,
+    pub _paren: Paren,
     pub sub_matches: MacroMatcher,
     pub rep_sep: Option<MacroRepSep>,
     pub rep_op: MacroRepOp,
@@ -238,7 +226,7 @@ impl MacroRepetition {
 
         Ok(Self {
             dollar_sign,
-            paren,
+            _paren: paren,
             sub_matches,
             rep_sep,
             rep_op,
@@ -370,23 +358,23 @@ impl ToTokens for MacroMatcher {
 
 #[derive(Clone)]
 pub struct LetBinding {
-    pub let_token: Token![let],
+    pub _let_token: Token![let],
     pub pattern: MacroMatch, // Single macro match, have to use braces for more interesting matches
-    pub equals_token: Token![=],
+    pub _equals_token: Token![=],
     pub macro_name_indirection: Option<Token![$]>,
     pub macro_invocation: Macro,
-    pub in_token: Token![in],
+    pub _in_token: Token![in],
 }
 
 impl LetBinding {
     fn parse_helper(input: ParseStream) -> syn::Result<Self> {
         Ok(Self {
-            let_token: input.parse()?,
+            _let_token: input.parse()?,
             pattern: input.parse()?,
-            equals_token: input.parse()?,
+            _equals_token: input.parse()?,
             macro_name_indirection: input.parse()?,
             macro_invocation: input.parse()?,
-            in_token: input.parse()?,
+            _in_token: input.parse()?,
         })
     }
 }

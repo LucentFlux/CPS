@@ -253,4 +253,4 @@ macro_rules! export_std_cps {
 
 export_std_cps!(concat);
 export_std_cps!(stringify);
-export_std_cps!(include);
+export_std_cps!(include_str);

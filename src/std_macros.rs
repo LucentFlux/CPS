@@ -1,5 +1,5 @@
 pub mod concat;
-pub mod include;
+pub mod include_str;
 pub mod stringify;
 
 macro_rules! impl_std_cps {
@@ -10,6 +10,8 @@ macro_rules! impl_std_cps {
         }
     ) => {
         mod $name {
+            #[allow(unused_imports)]
+            use super::*;
             $(
                 use $import;
             )*

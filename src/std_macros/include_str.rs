@@ -19,7 +19,7 @@ fn do_include(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
 }
 
 super::impl_std_cps!(
-    fn include(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-        super::do_include(tokens)
+    fn include_str(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+        include_str::do_include(tokens)
     }
 );

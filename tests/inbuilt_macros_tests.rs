@@ -24,7 +24,7 @@ macro_rules! macro1 {
     };
 
     (@run include) =>
-    let $($y:tt)* = cps::include!("tests/test_file.txt") in
+    let $($y:tt)* = cps::include_str!("tests/test_file.txt") in
     let $z:tt = cps::stringify!($($y)*) in
     {
         $z
